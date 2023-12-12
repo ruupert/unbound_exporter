@@ -17,7 +17,6 @@ import (
 	"bufio"
 	"crypto/tls"
 	"crypto/x509"
-	"flag"
 	"fmt"
 	"io"
 	"net"
@@ -30,10 +29,16 @@ import (
 
 	"sort"
 
+	"github.com/alecthomas/kingpin/v2"
 	"github.com/go-kit/log/level"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/promhttp"
+
 	"github.com/prometheus/common/promlog"
+	"github.com/prometheus/common/promlog/flag"
+	"github.com/prometheus/common/version"
+	"github.com/prometheus/exporter-toolkit/web"
+	"github.com/prometheus/exporter-toolkit/web/kingpinflag"
 )
 
 var (
@@ -474,7 +479,7 @@ func NewUnboundExporter(host string, ca string, cert string, key string) (*Unbou
 	}
 	roots := x509.NewCertPool()
 	if !roots.AppendCertsFromPEM(caData) {
-		return &UnboundExporter{}, fmt.Errorf("Failed to parse CA")
+		return &UnboundExporter{}, fmt.Errorf("failed to parse ca")
 	}
 
 	/* Client authentication. */
@@ -527,14 +532,20 @@ func (e *UnboundExporter) Collect(ch chan<- prometheus.Metric) {
 
 func main() {
 	var (
-		listenAddress = flag.String("web.listen-address", ":9167", "Address to listen on for web interface and telemetry.")
-		metricsPath   = flag.String("web.telemetry-path", "/metrics", "Path under which to expose metrics.")
-		unboundHost   = flag.String("unbound.host", "tcp://localhost:8953", "Unix or TCP address of Unbound control socket.")
-		unboundCa     = flag.String("unbound.ca", "/etc/unbound/unbound_server.pem", "Unbound server certificate.")
-		unboundCert   = flag.String("unbound.cert", "/etc/unbound/unbound_control.pem", "Unbound client certificate.")
-		unboundKey    = flag.String("unbound.key", "/etc/unbound/unbound_control.key", "Unbound client key.")
+		metricsPath  = kingpin.Flag("web.telemetry-path", "Path under which to expose metrics.").Default("/metrics").String()
+		unboundHost  = kingpin.Flag("unbound.host", "Unix or TCP address of Unbound control socket.").Default("tcp://localhost:8953").String()
+		unboundCa    = kingpin.Flag("unbound.ca", "Unbound server certificate.").Default("/etc/unbound/unbound_server.pem").String()
+		unboundCert  = kingpin.Flag("unbound.cert", "Unbound client certificate.").Default("/etc/unbound/unbound_control.pem").String()
+		unboundKey   = kingpin.Flag("unbound.key", "Unbound client key.").Default("/etc/unbound/unbound_control.key").String()
+		toolkitFlags = kingpinflag.AddFlags(kingpin.CommandLine, ":9167")
 	)
-	flag.Parse()
+	promlogConfig := &promlog.Config{}
+	flag.AddFlags(kingpin.CommandLine, promlogConfig)
+	kingpin.Version(version.Print("unbound_exporter"))
+	kingpin.CommandLine.UsageWriter(os.Stdout)
+	kingpin.HelpFlag.Short('h')
+	kingpin.Parse()
+	logger := promlog.New(promlogConfig)
 
 	_ = level.Info(log).Log("Starting unbound_exporter")
 	exporter, err := NewUnboundExporter(*unboundHost, *unboundCa, *unboundCert, *unboundKey)
@@ -554,7 +565,10 @@ func main() {
 			</body>
 			</html>`))
 	})
-	_ = level.Info(log).Log("Listening on address:port => ", *listenAddress)
-	_ = level.Error(log).Log(http.ListenAndServe(*listenAddress, nil))
-	os.Exit(1)
+
+	server := &http.Server{}
+	if err := web.ListenAndServe(server, toolkitFlags, logger); err != nil {
+		level.Error(logger).Log("err", err)
+		os.Exit(1)
+	}
 }
