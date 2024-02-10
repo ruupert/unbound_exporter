@@ -201,7 +201,7 @@ var (
 			"^num\\.query\\.tls\\.resume$"),
 		newUnboundMetric(
 			"query_https_total",
-			"Total number of queries that were made using HTTPS towards the Unbound server.",
+			"Total number of DoH queries that were made towards the Unbound server.",
 			prometheus.CounterValue,
 			nil,
 			"^num\\.query\\.https$"),
@@ -325,6 +325,18 @@ var (
 			prometheus.GaugeValue,
 			nil,
 			"^rrset\\.cache\\.count$"),
+		newUnboundMetric(
+			"rpz_action_count",
+			"Total number of triggered Response Policy Zone actions, by type.",
+			prometheus.CounterValue,
+			[]string{"type"},
+			"^num\\.rpz\\.action\\.rpz-([\\w-]+)$"),
+		newUnboundMetric(
+			"memory_doh_bytes",
+			"Memory used by DoH buffers, in bytes.",
+			prometheus.GaugeValue,
+			[]string{"buffer"},
+			"^mem\\.http\\.(\\w+)$"),
 	}
 )
 
